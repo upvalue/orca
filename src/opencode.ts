@@ -32,12 +32,10 @@ export async function createSession(
   model?: SessionModel,
 ): Promise<string> {
   const c = getClient();
-  console.log(`[opencode] creating session for ticket ${ticket.id}...`);
   const session = await c.session.create({
     ...(title && { body: { title } }),
   });
-  console.log(`[opencode] session.create response:`, JSON.stringify(session, null, 2));
-  if (!session.data) throw new Error(`failed to create session: ${JSON.stringify(session)}`);
+  if (!session.data) throw new Error(`failed to create session`);
 
   if (!prompt) {
     const meta = [

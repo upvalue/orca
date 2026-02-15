@@ -4,7 +4,7 @@ import type { Ticket } from "./tickets.ts";
 export interface StageMatch {
   status?: string;
   tag?: string | string[];
-  type?: string;
+  type?: string | string[];
 }
 
 export interface Stage {
@@ -51,4 +51,29 @@ export function renderPrompt(template: string, ticket: Ticket): string {
     .join("\n");
 
   return template.replace("{{Ticket}}", meta);
+}
+
+function formatMatch(m: StageMatch): string {
+  const parts: string[] = [];
+  if (m.status) parts.push(`status=${m.status}`);
+  if (m.tag) {
+    const tags = Array.isArray(m.tag) ? m.tag : [m.tag];
+    parts.push(tags.length === 1 ? `tag=${tags[0]}` : `tag=[${tags.join(",")}]`);
+  }
+  if (m.type) {
+    const types = Array.isArray(m.type) ? m.type : [m.type];
+    parts.push(types.length === 1 ? `type=${types[0]}` : `type=[${types.join(",")}]`);
+  }
+  return parts.join(" ");
+}
+
+export function formatRules(config: Config): string {
+  const lines: string[] = [];
+  if (config.model) lines.push(`  model: ${config.model}`);
+  lines.push(`  stages:`);
+  for (const s of config.stages) {
+    const action = s.inactionable ? "skip" : s.prompt ? "spawn" : "skip";
+    lines.push(`    ${s.name}  ${formatMatch(s.match)}  → ${action}`);
+  }
+  return lines.join("\n");
 }

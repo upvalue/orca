@@ -2,7 +2,7 @@ import chalk from "chalk";
 import type { Pool } from "./agent.ts";
 import { listOpenTickets, type Ticket } from "./tickets.ts";
 import { createSession, subscribeSession } from "./opencode.ts";
-import { type Config, type Stage, loadConfig, parseModel, renderPrompt } from "./config.ts";
+import { type Config, type Stage, formatRules, loadConfig, parseModel, renderPrompt } from "./config.ts";
 import { signal } from "./scheduler.ts";
 
 export type Decision = {
@@ -18,10 +18,15 @@ function matchStage(ticket: Ticket, stage: Stage): boolean {
   const m = stage.match;
   if (m.status && ticket.status !== m.status) return false;
   if (m.tag) {
+    // AND: ticket must have all specified tags
     const tags = Array.isArray(m.tag) ? m.tag : [m.tag];
     if (!tags.every((t) => ticket.tags.includes(t))) return false;
   }
-  if (m.type && ticket.type !== m.type) return false;
+  if (m.type) {
+    // OR: ticket type must be one of the specified types
+    const types = Array.isArray(m.type) ? m.type : [m.type];
+    if (!types.includes(ticket.type)) return false;
+  }
   // at least one field must be specified
   return !!(m.status || m.tag || m.type);
 }
@@ -84,12 +89,28 @@ export function planDecisions(
   return decisions;
 }
 
+let lastRulesSnapshot = "";
+let consecutiveFailures = 0;
+let backoffUntil = 0;
+
+function backoffMs(): number {
+  // 5s, 10s, 20s, 40s, capped at 60s
+  return Math.min(5_000 * Math.pow(2, consecutiveFailures - 1), 60_000);
+}
+
 export async function orchestrate(pool: Pool, config: Config): Promise<void> {
   // hot-reload config; fall back to passed-in config on error
   try {
     config = await loadConfig();
   } catch {
     // use existing config
+  }
+
+  const rules = formatRules(config);
+  if (rules !== lastRulesSnapshot) {
+    lastRulesSnapshot = rules;
+    console.log(chalk.cyan("\n  config reloaded:"));
+    console.log(chalk.dim(rules));
   }
 
   let tickets: Ticket[];
@@ -100,6 +121,13 @@ export async function orchestrate(pool: Pool, config: Config): Promise<void> {
   }
 
   console.log(chalk.dim(`\n  orchestrator: ${pool.draining ? "draining — skipping new work" : "planning"}...`));
+
+  if (Date.now() < backoffUntil) {
+    const remaining = Math.ceil((backoffUntil - Date.now()) / 1000);
+    console.log(chalk.dim(`  backing off (${remaining}s remaining, ${consecutiveFailures} consecutive failures)`));
+    console.log();
+    return;
+  }
 
   const decisions = planDecisions(pool, tickets, config.stages);
 
@@ -124,6 +152,10 @@ export async function orchestrate(pool: Pool, config: Config): Promise<void> {
         title,
         model,
       );
+
+      consecutiveFailures = 0;
+      backoffUntil = 0;
+
       const agent = pool.spawn(decision.ticketId, decision.title, sessionId);
 
       console.log(
@@ -153,11 +185,15 @@ export async function orchestrate(pool: Pool, config: Config): Promise<void> {
         );
       });
     } catch (err) {
+      consecutiveFailures++;
+      const wait = backoffMs();
+      backoffUntil = Date.now() + wait;
       console.log(
         chalk.red(
           `  error spawning agent: ${err instanceof Error ? err.message : String(err)}`,
-        ),
+        ) + chalk.dim(` (backing off ${wait / 1000}s)`),
       );
+      break;
     }
   }
 
