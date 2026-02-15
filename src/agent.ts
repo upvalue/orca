@@ -11,6 +11,7 @@ export class Pool {
   private agents: Map<number, Agent> = new Map();
   private nextId = 1;
   readonly maxSize: number;
+  draining = false;
 
   constructor(maxSize = 5) {
     this.maxSize = maxSize;

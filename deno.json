@@ -4,6 +4,7 @@
   },
   "imports": {
     "@std/cli": "jsr:@std/cli@^1",
+    "@std/toml": "jsr:@std/toml@^1",
     "@opencode-ai/sdk": "npm:@opencode-ai/sdk",
     "chalk": "npm:chalk@5",
     "ora": "npm:ora@8"

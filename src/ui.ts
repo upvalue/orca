@@ -8,7 +8,8 @@ export function renderStatus(pool: Pool, openTickets: number, watching: boolean)
   const agents = chalk.blue(`agents: ${running}/${max}`);
   const tickets = chalk.blue(`tickets: ${openTickets}`);
   const watch = watching ? chalk.green("watching") : chalk.dim("watch off");
-  return `${agents}  ${tickets}  ${watch}`;
+  const drain = pool.draining ? chalk.yellow("draining") : "";
+  return [agents, tickets, watch, drain].filter(Boolean).join("  ");
 }
 
 export function renderPrompt(): string {
@@ -45,6 +46,7 @@ export function printHelp(): void {
     "",
     chalk.dim("  orchestrator:"),
     chalk.dim("    o/run       ") + "run orchestrator evaluation",
+    chalk.dim("    o/drain     ") + "toggle drain mode (block new spawns)",
     "",
     chalk.dim("  general:"),
     chalk.dim("    help        ") + "show this message",

@@ -5,6 +5,7 @@ import { abortSession, createSession, subscribeSession } from "./opencode.ts";
 import chalk from "chalk";
 import { orchestrate, planDecisions } from "./orchestrator.ts";
 import { initScheduler, signal } from "./scheduler.ts";
+import { loadConfig, type Config } from "./config.ts";
 import {
   printAgentList,
   printError,
@@ -38,15 +39,16 @@ Options:
 const subcommand = args._[0] as string | undefined;
 
 if (subcommand === "plan") {
+  const config = await loadConfig();
   const tickets = await listOpenTickets();
   const pool = new Pool(5);
-  const decisions = planDecisions(pool, tickets);
+  const decisions = planDecisions(pool, tickets, config.stages);
 
   if (decisions.length === 0) {
     console.log("nothing to do");
   } else {
     for (const d of decisions) {
-      console.log(`spawn ${d.ticketId}  ${d.title}  (P${tickets.find((t) => t.id === d.ticketId)?.priority ?? "?"}, ${d.reason})`);
+      console.log(`spawn ${d.ticketId}  ${d.title}  (${d.reason})`);
     }
   }
 
@@ -85,6 +87,8 @@ async function writePrompt(): Promise<void> {
   const prompt = renderPrompt();
   Deno.stdout.writeSync(new TextEncoder().encode(`${status}\n${prompt}`));
 }
+
+let config: Config;
 
 async function handleCommand(input: string): Promise<boolean> {
   const trimmed = input.trim();
@@ -189,9 +193,19 @@ async function handleCommand(input: string): Promise<boolean> {
 
     // --- orchestrator ---
 
+    case "o/drain": {
+      pool.draining = !pool.draining;
+      if (pool.draining) {
+        printSuccess("draining — no new agents will be spawned");
+      } else {
+        printSuccess("drain off — new agents can be spawned");
+      }
+      break;
+    }
+
     case "o/run": {
       try {
-        await orchestrate(pool);
+        await orchestrate(pool, config);
       } catch (err) {
         printError(`orchestrator: ${(err as Error).message}`);
       }
@@ -211,8 +225,9 @@ async function handleCommand(input: string): Promise<boolean> {
 }
 
 async function main(): Promise<void> {
+  config = await loadConfig();
   printWelcome();
-  initScheduler(pool);
+  initScheduler(pool, config, () => writePrompt());
   if (args.watch) {
     watchTickets((changes) => signal("tickets", changes));
   }

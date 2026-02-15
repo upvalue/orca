@@ -2,17 +2,21 @@ import chalk from "chalk";
 import type { Pool } from "./agent.ts";
 import type { TicketChange } from "./tickets.ts";
 import { orchestrate } from "./orchestrator.ts";
+import type { Config } from "./config.ts";
 
-const COOLDOWN_MS = 10_000;
 const DEBOUNCE_MS = 500;
 
 let pool: Pool;
-let lastAutoRun = 0;
+let config: Config;
+let onComplete: (() => void) | undefined;
 let debounceTimer: number | undefined;
 let running = false;
+let pendingRerun = false;
 
-export function initScheduler(p: Pool): void {
+export function initScheduler(p: Pool, c: Config, cb?: () => void): void {
   pool = p;
+  config = c;
+  onComplete = cb;
 }
 
 function formatChanges(changes: TicketChange[]): string {
@@ -27,31 +31,36 @@ function formatChanges(changes: TicketChange[]): string {
   }).join(", ");
 }
 
-/** Signal a state change. The scheduler will debounce and respect the cooldown. */
+async function run(source: string, detail: string): Promise<void> {
+  running = true;
+  console.log(chalk.dim(`  [scheduler] triggering orchestrator (source: ${source}${detail})`));
+  try {
+    await orchestrate(pool, config);
+  } catch (err) {
+    console.log(chalk.red(`  orchestrator: ${(err as Error).message}`));
+  } finally {
+    running = false;
+    if (pendingRerun) {
+      pendingRerun = false;
+      console.log(chalk.dim(`  [scheduler] processing queued rerun`));
+      await run("queued", "");
+    } else {
+      onComplete?.();
+    }
+  }
+}
+
+/** Signal a state change. The scheduler will debounce and queue if busy. */
 export function signal(source: string, changes?: TicketChange[]): void {
   const detail = changes ? `: ${formatChanges(changes)}` : "";
   console.log(chalk.dim(`  [scheduler] signal received: ${source}${detail}`));
+
+  if (running) {
+    pendingRerun = true;
+    console.log(chalk.dim(`  [scheduler] queued (orchestrator busy)`));
+    return;
+  }
+
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(async () => {
-    if (running) {
-      console.log(chalk.dim(`  [scheduler] skipped (already running)`));
-      return;
-    }
-    const now = Date.now();
-    const elapsed = now - lastAutoRun;
-    if (elapsed < COOLDOWN_MS) {
-      console.log(chalk.dim(`  [scheduler] skipped (cooldown ${Math.round((COOLDOWN_MS - elapsed) / 1000)}s remaining)`));
-      return;
-    }
-    lastAutoRun = now;
-    running = true;
-    console.log(chalk.dim(`  [scheduler] triggering orchestrator (source: ${source}${detail})`));
-    try {
-      await orchestrate(pool);
-    } catch (err) {
-      console.log(chalk.red(`  orchestrator: ${(err as Error).message}`));
-    } finally {
-      running = false;
-    }
-  }, DEBOUNCE_MS);
+  debounceTimer = setTimeout(() => run(source, detail), DEBOUNCE_MS);
 }

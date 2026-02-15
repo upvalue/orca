@@ -20,35 +20,50 @@ function getClient(): OpencodeClient {
   return client;
 }
 
-export async function createSession(ticket: Ticket): Promise<string> {
+export interface SessionModel {
+  providerID: string;
+  modelID: string;
+}
+
+export async function createSession(
+  ticket: Ticket,
+  prompt?: string,
+  title?: string,
+  model?: SessionModel,
+): Promise<string> {
   const c = getClient();
   console.log(`[opencode] creating session for ticket ${ticket.id}...`);
-  const session = await c.session.create();
+  const session = await c.session.create({
+    ...(title && { body: { title } }),
+  });
   console.log(`[opencode] session.create response:`, JSON.stringify(session, null, 2));
   if (!session.data) throw new Error(`failed to create session: ${JSON.stringify(session)}`);
 
-  const meta = [
-    ticket.type ? `Type: ${ticket.type}` : "",
-    ticket.priority !== undefined ? `Priority: ${ticket.priority}` : "",
-    ticket.tags.length ? `Tags: ${ticket.tags.join(", ")}` : "",
-    ticket.deps.length ? `Deps: ${ticket.deps.join(", ")}` : "",
-  ].filter(Boolean);
+  if (!prompt) {
+    const meta = [
+      ticket.type ? `Type: ${ticket.type}` : "",
+      ticket.priority !== undefined ? `Priority: ${ticket.priority}` : "",
+      ticket.tags.length ? `Tags: ${ticket.tags.join(", ")}` : "",
+      ticket.deps.length ? `Deps: ${ticket.deps.join(", ")}` : "",
+    ].filter(Boolean);
 
-  const prompt = [
-    `Resolve the following ticket.`,
-    ``,
-    `Ticket ${ticket.id}: ${ticket.title}`,
-    ...meta,
-    ``,
-    ticket.body,
-  ]
-    .filter(Boolean)
-    .join("\n");
+    prompt = [
+      `Resolve the following ticket.`,
+      ``,
+      `Ticket ${ticket.id}: ${ticket.title}`,
+      ...meta,
+      ``,
+      ticket.body,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
 
   await c.session.promptAsync({
     path: { id: session.data.id },
     body: {
       parts: [{ type: "text", text: prompt }],
+      ...(model && { model }),
     },
   });
 
