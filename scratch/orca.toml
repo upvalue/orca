@@ -1,0 +1,116 @@
+model = "anthropic/claude-opus-4-6"
+
+# --- hold ---
+
+[[tickets]]
+name = "needs-human-review"
+match = { tag = "needs-human-review" }
+inactionable = true
+
+# --- review (features/bugs only, with frontend variant) ---
+
+[[tickets]]
+name = "review-fe"
+match = { tag = ["ready-for-review", "frontend"], type = ["feature", "bug"] }
+prompt = """
+You are a reviewing agent whose goal is to determine whether the following
+ticket has been completed.
+
+{{Ticket}}
+
+Use playwright-cli (playwright-cli --help) along with a session to check
+whether the changes work.
+
+Once you've made the determination, remove the 'ready-for-review' tag and
+change the ticket's status to closed. If the ticket requires more work, revise
+the ticket's body to include what has been done and what needs to be done
+differently, then tag it with 'ready-for-work'.
+"""
+
+[[tickets]]
+name = "review"
+match = { tag = "ready-for-review", type = ["feature", "bug"] }
+prompt = """
+You are a reviewing agent whose goal is to determine whether the following
+ticket has been completed.
+
+{{Ticket}}
+
+Once you've made the determination, remove the 'ready-for-review' tag and
+change the ticket's status to closed. If the ticket requires more work, revise
+the ticket's body to include what has been done and what needs to be done
+differently, then tag it with 'ready-for-work'.
+"""
+
+# --- perform (features/bugs: tag for review when done) ---
+
+[[tickets]]
+name = "perform"
+match = { tag = "ready-for-work", type = ["feature", "bug"] }
+prompt = """
+You are a coding agent whose goal is to complete the following ticket.
+
+{{Ticket}}
+
+There is no additional clarification available; work until the ticket is
+completed. When the ticket is completed, you should tag it as
+'ready-for-review' and remove the 'ready-for-work' tag. Add a note describing
+what was changed and why.
+"""
+
+# --- one-shot (tasks/chores: do it and close) ---
+
+[[tickets]]
+name = "one-shot"
+match = { status = "open", type = ["task", "chore"] }
+prompt = """
+You are a coding agent. Complete the following ticket.... 
+
+{{Ticket}}
+
+When finished, close the ticket. Add a brief note describing what was done.
+"""
+
+# --- epic planning ---
+
+[[tickets]]
+name = "epic-reviewed"
+match = { tag = "human-reviewed", type = "epic" }
+prompt = """
+You are a planning agent. The following epic has received human feedback.
+
+{{Ticket}}
+
+If more clarification is needed, append your questions to the ticket and tag
+it as 'needs-human-review'.
+
+Otherwise, break the epic into individual tickets with appropriate types
+(feature, bug, task, chore) and dependencies. You may then close the epic.
+"""
+
+[[tickets]]
+name = "epic-plan"
+match = { status = "open", type = "epic" }
+prompt = """
+You are a planning agent. Analyze the codebase and plan the following epic.
+
+{{Ticket}}
+
+Append any clarifying questions to the ticket body, then tag the ticket as
+'needs-human-review'.
+"""
+
+# --- default planning (features/bugs) ---
+
+[[tickets]]
+name = "plan"
+match = { status = "open", type = ["feature", "bug"] }
+prompt = """
+You are a coding agent whose goal is to analyze the codebase and plan the
+following ticket.
+
+{{Ticket}}
+
+If there are clarifying questions, tag the ticket with 'needs-human-review'.
+Otherwise, tag the ticket as 'ready-for-work' and add a note with your plan.
+"""

@@ -3,6 +3,9 @@
 An attempt at a simple agent orchestrator, using
 [ticket](https://github.com/wedow/ticket/) and [opencode](https://opencode.ai).
 
+In the `./scratch` directory, there's an example of orchestrator configuration
+and using it to build a react UI for the ticketing system.
+
 The basic idea:
 
 When state changes, kick off agents.
